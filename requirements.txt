@@ -1,0 +1,11 @@
+dandi>=0.62.0
+pynwb>=2.7.0
+remfile>=0.5.0
+h5py>=3.10.0
+psycopg2-binary>=2.9.9
+neo4j>=5.18.0
+qdrant-client>=1.8.0
+sentence-transformers>=2.7.0
+pandas>=2.2.0
+numpy>=1.26.0
+python-dotenv>=1.0.0
