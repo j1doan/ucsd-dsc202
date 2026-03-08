@@ -25,6 +25,7 @@ def ingest_postgres(nwb):
     session_id = nwb.identifier
     subject_id = str(nwb.subject.subject_id)
     units_df = nwb.units.to_dataframe()
+    trials_df = nwb.trials.to_dataframe() if nwb.trials else None
 
     # each unit's 'electrodes' cell is a small df of the referenced electrode rows.
     # .iloc[0]['location'] gives the brain region string for that unit.
@@ -35,7 +36,7 @@ def ingest_postgres(nwb):
 
     with psycopg.connect(config.PG_DSN) as conn, conn.cursor() as cur:
         cur.execute(
-            'INSERT INTO subjects (subject_id, age, sex, species, institution)'
+            'INSERT INTO subjects (subject_id, age, sex, species, institution) '
             'VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
             (subject_id, nwb.subject.age, nwb.subject.sex,
              nwb.subject.species, nwb.institution))
@@ -49,16 +50,38 @@ def ingest_postgres(nwb):
         for i in range(len(nwb.units)):
             spikes = np.array(nwb.units["spike_times"][i], dtype=float)
             dur = float(spikes[-1] - spikes[0]) if len(spikes) > 1 else 1.0
+            iso = units_df['IsolationDist'].iloc[i]
+            snr = units_df['SNR'].iloc[i]
             cur.execute(
                 'INSERT INTO neurons (session_id, unit_index, brain_region, '
-                'n_spikes, mean_firing_rate, spike_times) '
-                'VALUES (%s,%s,%s,%s,%s,%s) RETURNING neuron_id',
-                (session_id, i, regions[i], len(spikes), len(spikes) / dur, spikes.tolist()))
+                'n_spikes, mean_firing_rate, spike_times, orig_cluster_id, isolation_dist, snr) '
+                'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING neuron_id',
+                (session_id, i, regions[i], len(spikes), len(spikes) / dur, spikes.tolist(),
+                 int(units_df['origClusterID'].iloc[i]),
+                 None if np.isnan(iso) else float(iso),
+                 None if np.isnan(snr) else float(snr)))
             neuron_ids[i] = cur.fetchone()[0]
+
+        if trials_df is not None:
+            for j, row in trials_df.iterrows():
+                cur.execute(
+                    'INSERT INTO trials (session_id, trial_index, stim_phase, '
+                    'start_time, stop_time, stim_on_time, stim_off_time, '
+                    'delay1_time, delay2_time, stim_category, category_name, '
+                    'external_image_file, new_old_labels_recog, response_value, response_time) '
+                    'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (session_id, j, row['stim_phase'],
+                     row['start_time'], row['stop_time'],
+                     row['stim_on_time'], row['stim_off_time'],
+                     row['delay1_time'], row['delay2_time'],
+                     int(row['stimCategory']), row['category_name'],
+                     row['external_image_file'], row['new_old_labels_recog'],
+                     row['response_value'], row['response_time']))
 
         conn.commit()
 
-    print(f'[Postgres] {len(neuron_ids)} neurons.')
+    n_trials = len(trials_df) if trials_df is not None else 0
+    print(f'[Postgres] {len(neuron_ids)} neurons, {n_trials} trials.')
     return neuron_ids, session_id, subject_id, regions
 
 def ingest_neo4j(nwb, neuron_ids, session_id, subject_id, regions):
