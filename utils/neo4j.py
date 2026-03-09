@@ -14,36 +14,46 @@ def _driver():
 
 
 def get_graph_summary():
-    """Return node counts grouped by label using a simple Cypher query.
-
-    Returns a list of dicts: [{'labels': [...], 'count': n}, ...]
-    """
+    """Return node counts grouped by label using a simple Cypher query."""
     cypher = """
     MATCH (n)
     RETURN labels(n) AS labels, count(n) AS count
+    ORDER BY count DESC
     """
     driver = _driver()
     results = []
     with driver.session() as s:
         for record in s.run(cypher):
-            r = record['r']
-            results.append(dict(r))
+            results.append(record.data())
     driver.close()
-    return results
+    return pd.DataFrame(results)
 
 def get_brain_regions():
-    """
-    Get all brain regions as a list of dicts.
-    """
+    """Get all brain regions with their neuron counts."""
     cypher = """
-    MATCH (r:BrainRegion)
-    RETURN r
+    MATCH (br:BrainRegion)<-[:LOCATED_IN]-(n:Neuron)
+    RETURN br.name AS brain_region, count(n) AS n_neurons
+    ORDER BY n_neurons DESC
     """
     driver = _driver()
     results = []
     with driver.session() as s:
         for record in s.run(cypher):
-            r = record['r']
-            results.append(dict(r))
+            results.append(record.data())
     driver.close()
-    return results
+    return pd.DataFrame(results)
+
+def get_neurons_per_session():
+    """Get neuron count per session."""
+    cypher = """
+    MATCH (sess:Session)-[:HAS_NEURON]->(n:Neuron)
+    RETURN sess.session_id AS session_id, count(n) AS n_neurons
+    ORDER BY n_neurons DESC
+    """
+    driver = _driver()
+    results = []
+    with driver.session() as s:
+        for record in s.run(cypher):
+            results.append(record.data())
+    driver.close()
+    return pd.DataFrame(results)
