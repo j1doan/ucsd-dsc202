@@ -57,3 +57,36 @@ def get_experiment_flow():
             results.append(record.data())
     driver.close()
     return pd.DataFrame(results)
+
+def get_neuron_clusters():
+    """Get neuron clusters within sessions and which brain regions those sessions were targeted simultaneously.
+    """
+    cypher = """
+    MATCH (sess:Session)-[:HAS_NEURON]->(n:Neuron)-[:LOCATED_IN]->(r:BrainRegion)
+    RETURN sess, n, r
+    LIMIT 100;
+    """
+    driver = _driver()
+    results = []
+    with driver.session() as s:
+        for record in s.run(cypher):
+            results.append(record.data())
+    driver.close()
+    return pd.DataFrame(results)
+
+def get_multi_region_sessions():
+    """Get sessions that experimented on multiple brain regions."""
+    cypher = """
+    MATCH (sess:Session)-[:HAS_NEURON]->(n:Neuron)-[:LOCATED_IN]->(r:BrainRegion)
+    WITH sess, collect(distinct r.name) AS regions, count(n) AS unitCount
+    WHERE size(regions) > 1
+    RETURN sess.session_id, regions, unitCount
+    ORDER BY unitCount DESC;
+    """
+    driver = _driver()
+    results = []
+    with driver.session() as s:
+        for record in s.run(cypher):
+            results.append(record.data())
+    driver.close()
+    return pd.DataFrame(results)
